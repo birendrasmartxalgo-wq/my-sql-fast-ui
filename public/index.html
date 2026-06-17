@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mysql-fast-ui · MySQL console</title>
+<script>if (localStorage.getItem("msq_dark") === "1") document.documentElement.classList.add("dark");</script>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/inter-400.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/inter-600.woff2" crossorigin>
+<link rel="preload" as="font" type="font/woff2" href="/assets/fonts/plexmono-400.woff2" crossorigin>
+<link rel="stylesheet" href="/assets/tw.css?v=mysql2">
+<style>
+  .clamp2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+</style>
+</head>
+<body class="font-sans text-ink-100 text-[14px] h-screen flex flex-col overflow-hidden antialiased">
+
+<!-- ════════════════ LOGIN ════════════════ -->
+<div id="login" class="fixed inset-0 z-50 hidden items-center justify-center bg-paper-950 gridbg">
+  <div class="panel !bg-paper-850 p-8 w-[360px] flex flex-col gap-4 reveal">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-full bg-amber-led/90 text-paper-850 flex items-center justify-center shadow-[0_0_0_2px_var(--color-paper-850),0_0_0_3.5px_color-mix(in_oklab,var(--color-amber-led)_45%,transparent)]" data-ic="database" data-s="18"></div>
+      <div>
+        <div class="font-display font-semibold text-[17px] tracking-tight">mysql-fast-ui</div>
+        <div class="mlabel">mysql console</div>
+      </div>
+    </div>
+    <div class="h-px bg-rule-700"></div>
+    <label class="mlabel">access code</label>
+    <input id="pw" type="password" class="input font-mono" placeholder="••••••••••••" autofocus>
+    <button class="btn btn-primary justify-center py-2.5" onclick="doLogin()"><span data-ic="key" data-s="14"></span>Authenticate</button>
+    <div id="loginerr" class="text-red-led text-xs font-mono min-h-4"></div>
+  </div>
+</div>
+
+<!-- ════════════════ HEADER ════════════════ -->
+<header class="flex items-center gap-4 px-4 h-12 bg-paper-900 flex-none reveal border-b border-rule-700 border-t-2 border-t-amber-500">
+  <div class="flex items-center gap-2.5">
+    <div class="w-7 h-7 rounded-full bg-amber-led/90 text-paper-850 flex items-center justify-center" data-ic="database" data-s="14"></div>
+    <span class="font-display font-semibold text-[16px] tracking-tight">mysql-fast-ui</span>
+  </div>
+  <span class="mlabel hidden md:inline" id="conninfo"></span>
+  <span class="flex-1"></span>
+  <span class="chip" id="latency"><span class="led led-amber"></span><span>linking…</span></span>
+  <span class="chip hidden" id="curconnchip" title="Active server (not the local box!)"><span id="curconndot" class="led"></span><b id="curconn"></b></span>
+  <span class="chip chip-quill" id="curdbchip"><span data-ic="database" data-s="11"></span><b id="curdb">—</b></span>
+  <button class="btn btn-sm btn-icon" title="Toggle day / night mode" onclick="toggleDark()"><span id="darkic"></span></button>
+  <button class="btn btn-sm btn-icon" title="Logout" onclick="logout()"><span data-ic="logout" data-s="14"></span></button>
+</header>
+
+<div class="flex flex-1 min-h-0">
+  <!-- ════════════════ SIDEBAR ════════════════ -->
+  <aside id="sidebar" class="w-[300px] flex-none bg-paper-900 border-r border-rule-700 overflow-y-auto p-3 reveal" style="animation-delay:.06s">
+    <!-- server switcher: local + saved remote/SSH connections -->
+    <div class="mb-3 pb-3" style="border-bottom:1px dashed var(--color-rule-500)">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="mlabel">server</span>
+        <span class="flex gap-1">
+          <button class="btn btn-sm btn-icon btn-primary" title="Add server (host/port or SSH + PEM key)" onclick="openConnModal()"><span data-ic="plus" data-s="12"></span></button>
+          <button class="btn btn-sm btn-icon" title="Manage servers" onclick="openConnManager()"><span data-ic="server" data-s="12"></span></button>
+        </span>
+      </div>
+      <div class="flex items-center gap-2">
+        <span id="conndot" class="led" style="flex:none"></span>
+        <select id="connsel" class="input w-full text-xs font-mono" onchange="switchConn(this.value)"></select>
+      </div>
+    </div>
+    <div class="flex items-center justify-between mb-2">
+      <span class="mlabel">databases</span>
+      <span class="flex gap-1">
+        <button class="btn btn-sm btn-icon btn-primary" title="Create database" onclick="showCreateDb()"><span data-ic="plus" data-s="13"></span></button>
+        <button class="btn btn-sm btn-icon" title="Refresh" onclick="loadDatabases()"><span data-ic="refresh" data-s="13"></span></button>
+        <button class="btn btn-sm btn-icon" title="Collapse sidebar" onclick="toggleSidebar()"><span data-ic="chevron" data-s="13" style="transform:rotate(180deg)"></span></button>
+      </span>
+    </div>
+    <div id="createdb" class="hidden panel p-3 mb-3 flex-col gap-2" style="display:none">
+      <input id="newdbname" class="input w-full font-mono text-xs mb-2" placeholder="database_name">
+      <div class="flex gap-2">
+        <button class="btn btn-sm btn-primary" onclick="createDb()">Create</button>
+        <button class="btn btn-sm" onclick="document.getElementById('createdb').style.display='none'">Cancel</button>
+      </div>
+    </div>
+    <div id="dblist" role="tree" aria-label="Databases and tables"></div>
+  </aside>
+  <!-- collapsed-sidebar rail -->
+  <div id="sbexpand" class="hidden w-8 flex-none bg-paper-900 border-r border-rule-700 flex-col items-center pt-2 gap-2">
+    <button class="btn btn-sm btn-icon" title="Expand sidebar" onclick="toggleSidebar()"><span data-ic="chevron" data-s="13"></span></button>
+    <span class="text-quill-400 mt-1" data-ic="database" data-s="13"></span>
+  </div>
+  <!-- sidebar drag handle -->
+  <div id="sbdrag" class="w-1.5 -ml-px flex-none cursor-col-resize hover:bg-quill-500/50 transition-colors" title="Drag to resize · double-click to collapse"></div>
+
+  <!-- ════════════════ MAIN ════════════════ -->
+  <main class="flex-1 flex flex-col min-w-0 reveal" style="animation-delay:.12s">
+    <nav class="flex px-3 bg-paper-900 border-b border-rule-700 flex-none overflow-x-auto" role="tablist" aria-label="Workspace sections">
+      <button class="tab-btn active" id="tabbtn-query" role="tab" aria-selected="true" aria-controls="tab-query" data-tab="query" onclick="showTab('query')"><span data-ic="terminal" data-s="14"></span>Console</button>
+      <button class="tab-btn" data-tab="table" id="tabbtn-table" role="tab" aria-selected="false" aria-controls="tab-table" tabindex="-1" onclick="showTab('table')" disabled><span data-ic="filecode" data-s="14"></span><span id="tabbtn-table-label">DDL &amp; Indexes</span></button>
+      <button class="tab-btn" id="tabbtn-create" role="tab" aria-selected="false" aria-controls="tab-create" tabindex="-1" data-tab="create" onclick="showTab('create')"><span data-ic="wrench" data-s="14"></span>Builder</button>
+      <button class="tab-btn" id="tabbtn-joins" role="tab" aria-selected="false" aria-controls="tab-joins" tabindex="-1" data-tab="joins" onclick="showTab('joins')"><span data-ic="merge" data-s="14"></span>Joins</button>
+      <button class="tab-btn" id="tabbtn-impexp" role="tab" aria-selected="false" aria-controls="tab-impexp" tabindex="-1" data-tab="impexp" onclick="showTab('impexp')"><span data-ic="swap" data-s="14"></span>Transfer</button>
+      <button class="tab-btn" id="tabbtn-roles" role="tab" aria-selected="false" aria-controls="tab-roles" tabindex="-1" data-tab="roles" onclick="showTab('roles')"><span data-ic="shield" data-s="14"></span>Access</button>
+    </nav>
+
+    <!-- ──────── CONSOLE ──────── -->
+    <section class="tabpane active flex-1 min-h-0 hidden data-[on]:flex" id="tab-query" role="tabpanel" aria-labelledby="tabbtn-query" data-on>
+      <div class="flex flex-1 min-h-0 min-w-0 relative">
+        <div id="consolecol" class="flex-1 flex flex-col gap-3 p-4 min-w-0 overflow-y-auto">
+          <div id="consoletoolbar" class="flex items-center gap-2 flex-wrap">
+            <select id="snippets" class="input text-xs py-1.5 w-44" onchange="insertSnippet()">
+              <option value="">Templates…</option>
+            </select>
+            <label class="mlabel flex items-center gap-1.5">rows / page
+              <select id="maxrows" class="input w-24 py-1 text-xs font-mono">
+                <option value="100" selected>100</option>
+                <option value="1000">1,000</option>
+                <option value="10000">10,000</option>
+                <option value="100000">1,00,000</option>
+              </select>
+            </label>
+            <span class="flex-1"></span>
+            <button class="btn btn-sm" id="askaibtn" onclick="openAskAi()"><span data-ic="sparkles" data-s="13"></span>Ask AI</button>
+            <button class="btn btn-sm" id="savedbtn" onclick="toggleSaved()"><span data-ic="bookmark" data-s="13"></span>Saved</button>
+            <button class="btn btn-sm" id="histbtn" onclick="toggleHistory()"><span data-ic="history" data-s="13"></span>History</button>
+            <span class="flex items-center">
+              <button class="btn btn-sm !rounded-r-none" id="explainbtn" onclick="runExplain()" title="Show the query plan"><span data-ic="gauge" data-s="13"></span>Explain</button>
+              <label class="btn btn-sm !rounded-l-none !border-l-0 text-[11px] gap-1" title="EXPLAIN ANALYZE actually executes the query — disabled for mutating SQL"><input type="checkbox" id="explainanalyze" class="accent-quill-500">analyze</label>
+            </span>
+            <button class="btn btn-primary" id="runbtn" onclick="runEditor()" title="Run the selected SQL if you have a selection, else all statements. ⌃↵ runs the statement under the cursor · ⌃⇧↵ runs all"><span data-ic="play" data-s="13"></span><span id="runbtn-label">Run</span><kbd class="ml-1">⌃↵</kbd></button>
+          </div>
+          <div class="relative">
+            <div id="sqlbox" class="cm-host w-full"></div>
+          </div>
+          <div id="runsummary"></div>
+          <div id="results" class="flex flex-col gap-3 pb-4"></div>
+        </div>
+        <!-- history drawer -->
+        <div id="histdrawer" class="hidden w-[300px] flex-none border-l border-rule-700 bg-paper-900 flex-col min-h-0">
+          <div class="flex items-center justify-between px-3 h-10 border-b border-rule-700 flex-none">
+            <span class="mlabel">query history</span>
+            <button class="btn btn-sm btn-icon" title="Clear history" onclick="clearHistory()"><span data-ic="trash" data-s="12"></span></button>
+          </div>
+          <div class="px-2 py-2 border-b border-rule-700 flex flex-col gap-1.5 flex-none">
+            <input id="histq" class="input w-full font-mono text-xs py-1.5" placeholder="search sql or database…" oninput="histFilterChanged()">
+            <div class="flex items-center gap-1.5">
+              <input id="histdate" type="date" class="input flex-1 font-mono text-xs py-1" title="Show only this day" onchange="histFilterChanged()">
+              <button class="btn btn-sm btn-icon" title="Clear date filter" onclick="histClearDate()"><span data-ic="x" data-s="11"></span></button>
+            </div>
+          </div>
+          <div id="histlist" class="overflow-y-auto flex-1 p-2 flex flex-col gap-1.5"></div>
+          <div class="flex items-center justify-between px-2 h-9 border-t border-rule-700 flex-none">
+            <button class="btn btn-sm btn-icon" id="histprev" title="Newer" onclick="histPage(-1)"><span data-ic="chevron" data-s="12" style="transform:rotate(180deg)"></span></button>
+            <span class="mlabel" id="histrange">—</span>
+            <button class="btn btn-sm btn-icon" id="histnext" title="Older" onclick="histPage(1)"><span data-ic="chevron" data-s="12"></span></button>
+          </div>
+        </div>
+        <!-- saved-queries drawer -->
+        <div id="saveddrawer" class="hidden w-[300px] flex-none border-l border-rule-700 bg-paper-900 flex-col min-h-0">
+          <div class="flex items-center justify-between px-3 h-10 border-b border-rule-700 flex-none">
+            <span class="mlabel">saved queries</span>
+            <button class="btn btn-sm btn-primary" title="Save the current editor SQL" onclick="saveCurrentQuery()"><span data-ic="plus" data-s="12"></span>Save current</button>
+          </div>
+          <div id="savedlist" class="overflow-y-auto flex-1 p-2 flex flex-col gap-1.5"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────── TABLE: DDL & INDEXES ──────── -->
+    <section class="tabpane flex-1 min-h-0 hidden data-[on]:flex flex-col gap-4 p-4 overflow-y-auto" id="tab-table" role="tabpanel" aria-labelledby="tabbtn-table">
+      <div class="flex items-center gap-3">
+        <h2 class="font-display font-semibold text-[16px] tracking-tight flex items-center gap-2"><span data-ic="filecode" data-s="16" class="text-quill-400"></span><span id="tbl-title" class="font-mono">—</span></h2>
+        <span class="flex-1"></span>
+        <button class="btn btn-sm" onclick="if(activeTable) openInsertRow(activeTable.schema, activeTable.name)"><span data-ic="rowinsert" data-s="12"></span>New row</button>
+        <button class="btn btn-sm" onclick="if(activeTable) selectTable(activeTable.schema, activeTable.name)"><span data-ic="play" data-s="12"></span>Browse rows</button>
+        <button class="btn btn-sm" onclick="loadTableDef(true)"><span data-ic="refresh" data-s="12"></span>Refresh</button>
+      </div>
+      <div class="panel p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="mlabel">definition · SHOW CREATE TABLE</span>
+          <button class="btn btn-sm" onclick="copyDdl()"><span data-ic="copy" data-s="12"></span>Copy DDL</button>
+        </div>
+        <pre id="tbl-ddl" class="sqlblock max-h-[420px] overflow-y-auto">—</pre>
+      </div>
+      <div class="panel p-4">
+        <div class="mlabel mb-2">columns</div>
+        <div id="tbl-stats" class="gridscroll"></div>
+      </div>
+      <div class="panel p-4">
+        <div class="mlabel mb-2">indexes</div>
+        <div id="tbl-indexes" class="gridscroll"></div>
+      </div>
+    </section>
+
+    <!-- ──────── BUILDER ──────── -->
+    <section class="tabpane flex-1 min-h-0 hidden data-[on]:flex flex-col gap-3 p-4 overflow-y-auto" id="tab-create" role="tabpanel" aria-labelledby="tabbtn-create">
+      <div class="flex items-center gap-3">
+        <h2 class="font-display font-semibold text-[16px] tracking-tight flex items-center gap-2"><span data-ic="wrench" data-s="16" class="text-quill-400"></span>Table builder</h2>
+        <label class="mlabel flex items-center gap-1.5 ml-2">in
+          <select id="bld-db" class="input text-xs py-1.5 font-mono w-44" onchange="selectDb(this.value)"></select>
+        </label>
+        <span class="flex items-center ml-2">
+          <button class="btn btn-sm !rounded-r-none" id="bmode-create" onclick="builderMode('create')">Create</button>
+          <button class="btn btn-sm !rounded-l-none !border-l-0" id="bmode-alter" onclick="builderMode('alter')">Alter existing</button>
+        </span>
+        <span class="flex-1"></span>
+        <button class="btn btn-sm" onclick="openTypeGuide()"><span data-ic="layers" data-s="13"></span>Type guide</button>
+      </div>
+
+      <!-- CREATE pane -->
+      <div id="builder-create" class="flex flex-col gap-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <input id="ct-name" class="input w-52 font-mono text-xs" placeholder="table_name" oninput="renderDdl()">
+          <button class="btn btn-sm" onclick="addColRow()"><span data-ic="plus" data-s="12"></span>Column</button>
+          <span class="mlabel mx-1">constraints &amp; indexes:</span>
+          <button class="btn btn-sm" onclick="addConstraintRow('unique')">+ Unique</button>
+          <button class="btn btn-sm" onclick="addConstraintRow('check')">+ Check</button>
+          <button class="btn btn-sm" onclick="addConstraintRow('fk')">+ Foreign key</button>
+          <button class="btn btn-sm" onclick="addConstraintRow('index')">+ Index</button>
+        </div>
+        <div id="ct-cols" class="flex flex-col gap-1.5"></div>
+        <div class="mlabel">name · type · null · default · pk · unique · identity · check (expr) · remove</div>
+        <div id="ct-constraints" class="flex flex-col gap-1.5"></div>
+        <div class="mlabel mt-2">generated ddl</div>
+        <pre class="sqlblock" id="ct-ddl">--</pre>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" onclick="execDdl()"><span data-ic="play" data-s="13"></span>Execute DDL</button>
+          <button class="btn" onclick="ddlToEditor()"><span data-ic="terminal" data-s="13"></span>Open in console</button>
+        </div>
+      </div>
+
+      <!-- ALTER pane -->
+      <div id="builder-alter" class="hidden flex-col gap-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <select id="alt-table" class="input text-xs w-64 font-mono" onchange="altTableChanged()"><option value="">Pick a table…</option></select>
+          <span class="mlabel" id="alt-meta"></span>
+        </div>
+        <div class="flex items-center gap-1.5 flex-wrap" id="alt-ops">
+          <button class="btn btn-sm" data-op="addcol" onclick="altOp('addcol')">Add column</button>
+          <button class="btn btn-sm" data-op="dropcol" onclick="altOp('dropcol')">Drop column</button>
+          <button class="btn btn-sm" data-op="rencol" onclick="altOp('rencol')">Rename column</button>
+          <button class="btn btn-sm" data-op="rettype" onclick="altOp('rettype')">Change type</button>
+          <button class="btn btn-sm" data-op="dflt" onclick="altOp('dflt')">Default</button>
+          <button class="btn btn-sm" data-op="notnull" onclick="altOp('notnull')">Not null</button>
+          <button class="btn btn-sm" data-op="addidx" onclick="altOp('addidx')">Add index</button>
+          <button class="btn btn-sm" data-op="dropidx" onclick="altOp('dropidx')">Drop index</button>
+          <button class="btn btn-sm" data-op="addfk" onclick="altOp('addfk')">Add foreign key</button>
+          <button class="btn btn-sm" data-op="dropcon" onclick="altOp('dropcon')">Drop constraint</button>
+        </div>
+        <div id="alt-form" class="panel p-3 hidden"></div>
+        <div class="mlabel">generated ddl · review before executing</div>
+        <pre class="sqlblock" id="alt-ddl"><span class="cmt">-- pick a table and an operation</span></pre>
+        <div class="flex gap-2">
+          <button class="btn btn-primary" onclick="execAlterDdl()"><span data-ic="play" data-s="13"></span>Execute</button>
+          <button class="btn" onclick="alterToEditor()"><span data-ic="terminal" data-s="13"></span>Open in console</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ──────── JOINS ──────── -->
+    <section class="tabpane flex-1 min-h-0 hidden data-[on]:flex flex-col gap-3 p-4 overflow-y-auto" id="tab-joins" role="tabpanel" aria-labelledby="tabbtn-joins">
+      <h2 class="font-display font-semibold text-[16px] tracking-tight flex items-center gap-2"><span data-ic="merge" data-s="16" class="text-quill-400"></span>Join suggestions</h2>
+      <div class="text-ink-500 text-xs">Ranked: foreign keys <span class="chip chip-green">high</span> · 2-hop FK chains <span class="chip chip-amber">medium</span> · shared column name+type <span class="chip">low</span></div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="join-table" class="input text-xs w-56 font-mono"><option value="">Pick a table…</option></select>
+        <button class="btn btn-primary btn-sm" onclick="loadJoins()">Suggest joins</button>
+        <span class="mlabel mx-2">— or path —</span>
+        <select id="join-from" class="input text-xs w-44 font-mono"><option value="">from…</option></select>
+        <span data-ic="arrowright" data-s="13" class="text-ink-500"></span>
+        <select id="join-to" class="input text-xs w-44 font-mono"><option value="">to…</option></select>
+        <button class="btn btn-sm" onclick="loadJoinPath()">Find path</button>
+      </div>
+      <div id="join-results" class="flex flex-col gap-3"></div>
+    </section>
+
+    <!-- ──────── TRANSFER ──────── -->
+    <section class="tabpane flex-1 min-h-0 hidden data-[on]:flex flex-col gap-4 p-4 overflow-y-auto" id="tab-impexp" role="tabpanel" aria-labelledby="tabbtn-impexp">
+      <div class="panel p-4">
+        <div class="mlabel mb-3">export · mysqldump</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <select id="exp-db" class="input text-xs font-mono w-48"></select>
+          <button class="btn btn-primary btn-sm" onclick="exportDb('plain')"><span data-ic="download" data-s="13"></span>.sql plain</button>
+        </div>
+        <div class="text-ink-500 text-xs mt-2">Exports via mysqldump. Import auto-detects plain SQL.</div>
+      </div>
+      <div class="panel p-4">
+        <div class="mlabel mb-3">import · mysql client</div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <input type="file" id="imp-file" accept=".sql,.dump,.backup,.tar" class="input text-xs file:mr-3 file:rounded-md file:border-0 file:bg-paper-700 file:text-ink-300 file:px-3 file:py-1.5 file:text-xs file:cursor-pointer">
+          <select id="imp-db" class="input text-xs font-mono w-44"></select>
+          <label class="text-xs text-ink-500 flex items-center gap-1.5"><input type="checkbox" id="imp-create" class="accent-quill-500"> new database:</label>
+          <input id="imp-newname" class="input w-40 font-mono text-xs" placeholder="new_db_name">
+          <button class="btn btn-primary btn-sm" onclick="importDb()"><span data-ic="upload" data-s="13"></span>Import</button>
+        </div>
+        <pre class="sqlblock mt-3 hidden max-h-72 overflow-y-auto" id="imp-out"></pre>
+      </div>
+    </section>
+
+    <!-- ──────── ACCESS ──────── -->
+    <section class="tabpane flex-1 min-h-0 hidden data-[on]:flex flex-col gap-4 p-4 overflow-y-auto" id="tab-roles" role="tabpanel" aria-labelledby="tabbtn-roles">
+      <div class="panel p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="mlabel">users</span>
+          <button class="btn btn-sm btn-icon" onclick="loadRoles()"><span data-ic="refresh" data-s="12"></span></button>
+        </div>
+        <div class="text-ink-500 text-xs mb-3">Mutations via Console templates: CREATE USER · GRANT · REVOKE.</div>
+        <div id="roles-out" class="gridscroll"></div>
+      </div>
+      <div class="panel p-4">
+        <div class="mlabel mb-3">table grants in <b id="grants-db" class="text-quill-400">…</b></div>
+        <div id="grants-out" class="gridscroll"></div>
+      </div>
+      <div class="panel p-4">
+        <div class="flex items-center justify-between mb-3">
+          <span class="mlabel">audit log · every mutating statement run from this console</span>
+          <button class="btn btn-sm btn-icon" onclick="loadAudit()"><span data-ic="refresh" data-s="12"></span></button>
+        </div>
+        <div id="audit-out" class="gridscroll max-h-[420px]"></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="fixed bottom-4 right-4 flex flex-col gap-2 z-[60]" aria-live="polite" aria-atomic="false"></div>
+
+<!-- ════════════════ PENDING-EDITS SAVE BAR ════════════════ -->
+<div id="savebar" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[65] panel !bg-paper-850 pl-4 pr-2.5 py-2 items-center gap-3 shadow-[0_12px_36px_-8px_var(--shadow-color)]">
+  <span class="led led-amber"></span>
+  <span class="font-mono text-[11px]" id="savecount"></span>
+  <button class="btn btn-sm btn-primary" onclick="savePending()"><span data-ic="play" data-s="12"></span>Save · 1 transaction</button>
+  <button class="btn btn-sm" onclick="discardPending()">Discard</button>
+</div>
+
+<!-- ════════════════ MODAL ════════════════ -->
+<div id="modal" class="fixed inset-0 z-[70] hidden items-center justify-center bg-black/40 p-6">
+  <div id="modalcard" role="dialog" aria-modal="true" class="panel !bg-paper-850 w-full max-w-[620px] max-h-[85vh] flex flex-col reveal shadow-[0_24px_60px_-12px_var(--shadow-color)]"></div>
+</div>
+
+<script src="/js/core.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/cm6.js?v=mysql1"></script>
+<script src="/js/editor.js"></script>
+<script src="/js/console.js"></script>
+<script src="/js/autocomplete.js"></script>
+<script src="/js/builder.js"></script>
+<script src="/js/joins.js"></script>
+<script src="/js/transfer.js"></script>
+<script src="/js/access.js"></script>
+<script src="/js/saved.js"></script>
+<script src="/js/ai.js"></script>
+<script src="/js/connections.js"></script>
+<script src="/js/boot.js"></script>
+</body>
+</html>

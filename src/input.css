@@ -1,0 +1,308 @@
+/* pg-admin-lite — modern theme · Tailwind 4.3 standalone build
+   tools/tailwindcss -i src/input.css -o public/assets/tw.css --minify
+
+   A neutral, high-contrast Postgres console (DataGrip / TablePlus lineage):
+   cool-gray surfaces, one blue accent, crisp 1px borders, dense data grid.
+   Light + "night" dark via token overrides under html.dark. Zero CDN —
+   Inter (UI) + IBM Plex Mono (data/SQL) self-hosted. */
+@import "tailwindcss";
+
+@font-face { font-family: "Inter"; font-weight: 400; font-style: normal; font-display: swap; src: url("/assets/fonts/inter-400.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 500; font-style: normal; font-display: swap; src: url("/assets/fonts/inter-500.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 600; font-style: normal; font-display: swap; src: url("/assets/fonts/inter-600.woff2") format("woff2"); }
+@font-face { font-family: "Inter"; font-weight: 700; font-style: normal; font-display: swap; src: url("/assets/fonts/inter-700.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 400; font-style: normal; font-display: swap; src: url("/assets/fonts/plexmono-400.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 500; font-style: normal; font-display: swap; src: url("/assets/fonts/plexmono-500.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 600; font-style: normal; font-display: swap; src: url("/assets/fonts/plexmono-600.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-weight: 700; font-style: normal; font-display: swap; src: url("/assets/fonts/plexmono-700.woff2") format("woff2"); }
+
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-display: "Inter", system-ui, sans-serif;
+
+  /* paper — elevation strata (higher number = lower elevation / deeper surface) */
+  --color-paper-950: #ffffff;  /* app canvas */
+  --color-paper-900: #f7f8fa;  /* header, sidebar, input wells */
+  --color-paper-850: #ffffff;  /* cards — panels */
+  --color-paper-800: #eef0f4;  /* table headers, chips, buttons */
+  --color-paper-700: #e3e6ec;  /* selected rows, icon tiles */
+  --color-paper-600: #d4d8e0;  /* deepest surface */
+
+  /* rules & ink */
+  --color-rule-700: #e6e8ec;   /* hairline */
+  --color-rule-500: #d0d4dc;   /* default border */
+  --color-rule-300: #aeb4c0;   /* strong border */
+  --color-ink-100: #16191f;    /* headings / strongest text */
+  --color-ink-300: #353b45;    /* body / grid cells */
+  --color-ink-500: #5c6470;    /* labels, table headers */
+  --color-ink-700: #6b7280;    /* placeholder / ghost */
+
+  /* quill — MySQL-teal accent ramp (quill-300 darkest in light) */
+  --color-quill-300: #0e6b7a;
+  --color-quill-400: #0e7490;
+  --color-quill-500: #0891a6;
+  --color-quill-600: #06b6d4;
+
+  /* status */
+  --color-amber-led: #b45309;
+  --color-red-led: #dc2626;
+  --color-green-led: #15803d;
+  --color-blue-led: #2563eb;
+
+  /* code-highlight + depth (theme-aware, fixes the dark-mode leaks) */
+  --color-str: #1d7a55;
+  --color-num: #b45309;
+  --shadow-color: rgba(15, 18, 24, 0.12);
+}
+
+/* ── night mode — same bindings, darker surfaces ──────────────────────────
+   Every component reads tokens via var(), so overriding them under html.dark
+   flips the whole console. Toggle persisted in localStorage (pgal_dark). */
+.dark {
+  --color-paper-950: #0e1014;
+  --color-paper-900: #16181d;
+  --color-paper-850: #1c1f26;
+  --color-paper-800: #23272f;
+  --color-paper-700: #2d323c;
+  --color-paper-600: #3a404c;
+  --color-rule-700: #262a32;
+  --color-rule-500: #343a45;
+  --color-rule-300: #4a515f;
+  --color-ink-100: #f2f4f7;
+  --color-ink-300: #c4cad4;
+  --color-ink-500: #9099a6;
+  --color-ink-700: #7a838f;
+  --color-quill-300: #7fd6e6;
+  --color-quill-400: #5cc6da;
+  --color-quill-500: #38b2c9;
+  --color-quill-600: #2f9bb0;
+  --color-amber-led: #e0a23c;
+  --color-red-led: #f0726a;
+  --color-green-led: #5cc47a;
+  --color-blue-led: #7aa2ff;
+  --color-str: #6dd0a8;
+  --color-num: #e0a23c;
+  --shadow-color: rgba(0, 0, 0, 0.55);
+}
+
+@layer base {
+  :focus-visible { outline: 2px solid var(--color-quill-500); outline-offset: 1px; border-radius: 2px; }
+  ::selection { background: color-mix(in oklab, var(--color-quill-500) 22%, transparent); }
+  * { scrollbar-width: thin; scrollbar-color: var(--color-rule-300) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-rule-300); border-radius: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  body {
+    background: var(--color-paper-950);
+    color: var(--color-ink-100);
+  }
+  kbd {
+    font-family: var(--font-mono); font-size: 11px; padding: 1px 5px;
+    border: 1px solid var(--color-rule-500); border-bottom-width: 2px;
+    border-radius: 4px; color: var(--color-ink-300); background: var(--color-paper-850);
+  }
+}
+
+@layer components {
+  /* faint neutral ruling — login backdrop */
+  .gridbg {
+    background-image: linear-gradient(var(--color-rule-700) 1px, transparent 1px);
+    background-size: 100% 28px;
+  }
+  /* micro-label — section headings */
+  .mlabel {
+    font-family: var(--font-sans); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-ink-500);
+  }
+  .panel {
+    background: var(--color-paper-850);
+    border: 1px solid var(--color-rule-700);
+    border-radius: 4px;
+    box-shadow: 0 1px 2px var(--shadow-color);
+  }
+  /* status dots */
+  .led { width: 7px; height: 7px; border-radius: 9999px; display: inline-block; flex: none; }
+  .led-green { background: var(--color-green-led); box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-green-led) 20%, transparent); }
+  .led-red   { background: var(--color-red-led);   box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-red-led) 20%, transparent); }
+  .led-amber { background: var(--color-amber-led); box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-amber-led) 20%, transparent); }
+
+  /* flat buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; line-height: 1;
+    padding: 7px 12px; border-radius: 4px; cursor: pointer;
+    color: var(--color-ink-300); background: var(--color-paper-850);
+    border: 1px solid var(--color-rule-500);
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+  }
+  .btn:hover { background: var(--color-paper-800); border-color: var(--color-rule-300); color: var(--color-ink-100); }
+  .btn:active { background: var(--color-paper-700); }
+  .btn:focus-visible { outline: 2px solid var(--color-quill-500); outline-offset: 1px; }
+  .btn-primary {
+    color: var(--color-paper-850);
+    background: var(--color-quill-500);
+    border-color: var(--color-quill-500);
+  }
+  .btn-primary:hover { background: var(--color-quill-400); color: var(--color-paper-850); border-color: var(--color-quill-400); }
+  .btn-primary:active { background: var(--color-quill-300); border-color: var(--color-quill-300); }
+  .btn-primary kbd { background: color-mix(in oklab, var(--color-paper-850) 22%, transparent); border-color: color-mix(in oklab, var(--color-paper-850) 40%, transparent); color: var(--color-paper-850); }
+  .btn-danger { color: var(--color-red-led); border-color: color-mix(in oklab, var(--color-red-led) 45%, var(--color-rule-500)); }
+  .btn-danger:hover { border-color: var(--color-red-led); background: color-mix(in oklab, var(--color-red-led) 8%, var(--color-paper-850)); color: var(--color-red-led); }
+  .btn-sm { padding: 4px 8px; font-size: 12px; }
+  .btn-icon { padding: 5px; }
+
+  /* flat fields */
+  .input {
+    font-size: 14px; color: var(--color-ink-100);
+    background: var(--color-paper-900); border: 1px solid var(--color-rule-500);
+    border-radius: 4px; padding: 7px 10px;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .input::placeholder { color: var(--color-ink-700); }
+  .input:focus {
+    outline: none; border-color: var(--color-quill-500);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-quill-500) 25%, transparent);
+  }
+  select.input { appearance: none; background-image: linear-gradient(45deg, transparent 50%, var(--color-ink-500) 50%), linear-gradient(135deg, var(--color-ink-500) 50%, transparent 50%); background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%; background-size: 5px 5px; background-repeat: no-repeat; padding-right: 26px; }
+
+  /* data grid */
+  .grid-table { border-collapse: separate; border-spacing: 0; font-family: var(--font-mono); font-size: 12.5px; width: max-content; min-width: 100%; }
+  .grid-table th {
+    position: sticky; top: 0; z-index: 1; text-align: left;
+    font-family: var(--font-sans); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--color-ink-500); background: var(--color-paper-800);
+    padding: 5px 10px; border-bottom: 1px solid var(--color-rule-300);
+    white-space: nowrap;
+  }
+  .grid-table td {
+    padding: 3.5px 10px; color: var(--color-ink-300);
+    border-bottom: 1px solid var(--color-rule-700);
+    max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .grid-table tbody tr.zebra td { background: color-mix(in oklab, var(--color-ink-100) 3%, transparent); }
+  .grid-table tbody tr:hover td { background: color-mix(in oklab, var(--color-quill-500) 8%, transparent); }
+  .grid-table td.num, .grid-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* clickable cells — inspector/editor popup */
+  .grid-table td.cellv { cursor: pointer; }
+  .grid-table td.cellv:hover { background: color-mix(in oklab, var(--color-quill-500) 14%, transparent); }
+  /* sortable headers — browse-mode (server) + client page-sort */
+  .grid-table th.thsort, .grid-table th.thsortc { cursor: pointer; user-select: none; }
+  .grid-table th.thsort:hover, .grid-table th.thsortc:hover { color: var(--color-quill-400); }
+  .sortind { margin-left: 4px; font-size: 9px; opacity: 0.75; }
+  /* frozen first column (coexists with virtualization) */
+  .grid-table.freeze1 th:first-child, .grid-table.freeze1 td:first-child { position: sticky; left: 0; z-index: 2; background: var(--color-paper-900); box-shadow: 1px 0 0 var(--color-rule-500); }
+  .grid-table.freeze1 thead th:first-child { z-index: 3; }
+  .grid-table.freeze1 tbody tr:hover td:first-child { background: var(--color-paper-800); }
+  /* draggable column resizer */
+  .th-resizer { position: absolute; top: 0; right: -3px; width: 6px; height: 100%; cursor: col-resize; z-index: 4; }
+  .grid-table.resizing { user-select: none; cursor: col-resize; }
+  /* uncommitted inline edits */
+  .grid-table td.pendingcell { background: color-mix(in oklab, var(--color-amber-led) 16%, transparent) !important; box-shadow: inset 2px 0 0 var(--color-amber-led); color: var(--color-ink-100); }
+  .cellinput {
+    width: 100%; min-width: 90px; font: inherit; color: var(--color-ink-100);
+    background: var(--color-paper-900); border: 1px solid var(--color-quill-500);
+    border-radius: 3px; padding: 1px 5px; outline: none;
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-quill-500) 18%, transparent);
+  }
+
+  /* every wide grid scrolls inside its own wrapper */
+  .gridscroll { overflow: auto; overscroll-behavior: contain; max-width: 100%; scrollbar-width: thin; scrollbar-color: var(--color-rule-300) var(--color-paper-800); }
+  .gridscroll::-webkit-scrollbar { width: 10px; height: 10px; }
+  .gridscroll::-webkit-scrollbar-thumb { background: var(--color-rule-300); border-radius: 5px; border: 2px solid var(--color-paper-850); }
+  .gridscroll::-webkit-scrollbar-track { background: var(--color-paper-800); }
+
+  /* chips — rectangular status tags */
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 600; line-height: 1;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3.5px 7px; border-radius: 3px;
+    border: 1px solid var(--color-rule-500); color: var(--color-ink-500);
+    background: var(--color-paper-800);
+  }
+  .chip-quill { color: var(--color-quill-400); border-color: color-mix(in oklab, var(--color-quill-500) 45%, transparent); }
+  .chip-amber { color: var(--color-amber-led); border-color: color-mix(in oklab, var(--color-amber-led) 45%, transparent); }
+  .chip-red   { color: var(--color-red-led);   border-color: color-mix(in oklab, var(--color-red-led) 45%, transparent); }
+  .chip-green { color: var(--color-green-led); border-color: color-mix(in oklab, var(--color-green-led) 45%, transparent); }
+
+  /* floating anchored dropdown menu (sidebar table export, etc.) */
+  .popmenu {
+    position: fixed; z-index: 1000; min-width: 184px;
+    display: flex; flex-direction: column; padding: 4px;
+    background: var(--color-paper-850); border: 1px solid var(--color-rule-500);
+    border-radius: 6px; box-shadow: 0 10px 28px -10px var(--shadow-color), 0 2px 6px -2px var(--shadow-color);
+    animation: popin 0.1s ease-out;
+  }
+  @keyframes popin { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+  .popmenu-item {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 7px 9px; border-radius: 4px; cursor: pointer;
+    font-size: 12.5px; font-weight: 500; color: var(--color-ink-300);
+    background: none; border: none; text-align: left;
+    transition: background 0.1s, color 0.1s;
+  }
+  .popmenu-item:hover, .popmenu-item:focus-visible { background: var(--color-paper-800); color: var(--color-ink-100); outline: none; }
+  .popmenu-item svg { color: var(--color-ink-500); }
+  .popmenu-item:hover svg, .popmenu-item:focus-visible svg { color: var(--color-quill-400); }
+  .popmenu-item-danger:hover, .popmenu-item-danger:focus-visible { color: var(--color-red-led); }
+
+  /* flat underline tabs */
+  .tab-btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-size: 12.5px; font-weight: 500; color: var(--color-ink-500);
+    padding: 9px 14px; cursor: pointer;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .tab-btn:hover { color: var(--color-ink-300); }
+  .tab-btn.active { color: var(--color-quill-400); font-weight: 600; border-bottom-color: var(--color-quill-500); }
+  .tab-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .tab-btn:focus-visible { outline: 2px solid var(--color-quill-500); outline-offset: -2px; }
+
+  /* rendered SQL (read-only previews / EXPLAIN) */
+  .sqlblock {
+    font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
+    color: var(--color-ink-300); background: var(--color-paper-900);
+    border: 1px solid var(--color-rule-700); border-radius: 4px;
+    padding: 10px 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
+  }
+  .sqlblock .kw { color: var(--color-quill-400); font-weight: 600; }
+  .sqlblock .str { color: var(--color-str); }
+  .sqlblock .num { color: var(--color-num); }
+  .sqlblock .cmt { color: var(--color-ink-500); font-style: italic; }
+
+  /* CodeMirror 6 host */
+  .cm-host { width: 100%; }
+  .cm-host .cm-editor { border-radius: 4px; background: var(--color-paper-900); }
+  .cm-host .cm-editor.cm-focused { outline: none; box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-quill-500) 25%, transparent); }
+  .cm-host .cm-scroller { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; }
+
+  /* staged page-load reveal */
+  .reveal { opacity: 0; transform: translateY(8px); animation: reveal 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+  @keyframes reveal { to { opacity: 1; transform: none; } }
+
+  /* toasts */
+  .toastmsg {
+    font-size: 12.5px; padding: 9px 14px; border-radius: 4px; max-width: 420px;
+    background: var(--color-paper-850); border: 1px solid var(--color-rule-500);
+    border-left: 3px solid var(--color-quill-500); color: var(--color-ink-100);
+    box-shadow: 0 8px 24px -8px var(--shadow-color);
+    animation: toastin 0.25s cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  .toastmsg.error { border-left-color: var(--color-red-led); }
+  @keyframes toastin { from { opacity: 0; transform: translateX(16px); } }
+
+  /* legacy autocomplete dropdown (superseded by CM6; kept for safety) */
+  .ac-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-family: var(--font-mono); font-size: 12.5px; color: var(--color-ink-300); cursor: pointer; }
+  .ac-item.sel { background: color-mix(in oklab, var(--color-quill-500) 14%, transparent); color: var(--color-quill-300); }
+  .ac-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 320px; }
+  .ac-kind { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-ink-700); margin-left: auto; }
+}
+
+/* responsive — desktop-first, single breakpoint */
+@media (max-width: 1100px) {
+  #histdrawer, #saveddrawer { position: absolute; top: 0; right: 0; bottom: 0; z-index: 40; box-shadow: -8px 0 24px -12px var(--shadow-color); }
+  #consoletoolbar { flex-wrap: nowrap; overflow-x: auto; }
+}
