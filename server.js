@@ -16,6 +16,9 @@ import { join } from "node:path";
 const PORT = Number(process.env.PORT || 4602);
 const HOST = process.env.HOST || "0.0.0.0";
 const ASSETS_DIR = process.env.ASSETS_DIR || import.meta.dir + "/public";
+// In a packaged desktop build the MySQL client tools (mysqldump/mysql) are bundled in a
+// resource dir; the Tauri shell sets MYSQL_BIN_DIR to it. Otherwise fall back to PATH.
+const myTool = (name) => (process.env.MYSQL_BIN_DIR ? join(process.env.MYSQL_BIN_DIR, name) : name);
 
 // ---------------------------------------------------------------- route handlers
 async function handleApi(req, url, ip) {
@@ -353,7 +356,7 @@ async function handleApi(req, url, ip) {
     needDb();
     const format = url.searchParams.get("format") === "custom" ? "custom" : "plain";
     const t = await target();
-    const args = ["mysqldump", "-h", t.host, "-P", String(t.port), "-u", t.user,
+    const args = [myTool("mysqldump"), "-h", t.host, "-P", String(t.port), "-u", t.user,
       t.password ? `-p${t.password}` : "", "--single-transaction", "--routines", "--triggers",
       db];
     // filter out empty password arg
@@ -383,7 +386,7 @@ async function handleApi(req, url, ip) {
     }
     const tmp = join(tmpdir(), `mysql-fast-import-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await Bun.write(tmp, buf);
-    const args = ["mysql", "-h", t.host, "-P", String(t.port), "-u", t.user,
+    const args = [myTool("mysql"), "-h", t.host, "-P", String(t.port), "-u", t.user,
       t.password ? `-p${t.password}` : "", db];
     const cleanArgs = args.filter(a => a !== "");
     const proc = Bun.spawn(cleanArgs, {

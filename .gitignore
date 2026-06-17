@@ -9,3 +9,14 @@ node_modules/
 
 # runtime sqlite store (saved queries / app state)
 data/
+
+# desktop build (Tauri) — compiled artifacts, built per-platform in CI
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/
+src-tauri/icon-source.png
+
+# bundled MySQL client tools — staged per-arch in CI, not versioned
+# (keep the dir so Tauri's resource path resolves; tools land here at build time)
+tools/mysql/*
+!tools/mysql/.gitkeep
