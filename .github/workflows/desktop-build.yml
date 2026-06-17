@@ -1,0 +1,135 @@
+name: Build desktop installers
+
+# Builds the native installers on each OS (Tauri's bundlers + MSVC/WebView2 are
+# host-only, so this cannot be cross-built from one machine — CI does each natively).
+#   Windows -> NSIS .exe   |   macOS -> .dmg   |   Linux -> .deb
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    permissions:
+      contents: write # publish installers to the GitHub Release on a tag
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            bun_target: bun-windows-x64
+            bundles: nsis
+          - os: macos-14
+            rust_target: aarch64-apple-darwin
+            bun_target: bun-darwin-arm64
+            bundles: dmg
+          - os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            bun_target: bun-linux-x64
+            # .deb only: Tauri's deb bundler copies the resource tree as-is, whereas the
+            # AppImage path runs linuxdeploy which fails resolving deps of the bundled
+            # client binaries. .deb is reliable and the standard Linux package format.
+            bundles: deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      # Linux needs the WebKitGTK + bundler system libs Tauri links against
+      - name: Install Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install JS deps (Tauri CLI)
+        run: bun install
+
+      # ---- compile the existing Bun server to a single-file sidecar for this platform.
+      # bun appends .exe on the windows target, matching Tauri's -<triple> sidecar naming.
+      - name: Build Bun sidecar
+        run: bun build server.js --compile --minify --target=${{ matrix.bun_target }} --outfile src-tauri/binaries/mysql-fast-server-${{ matrix.rust_target }}
+
+      # ---- stage the bundled MySQL client tools (mysqldump + mysql + libs)
+      - name: Stage MySQL client tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://cdn.mysql.com//Downloads/MySQL-8.0/mysql-8.0.40-winx64.zip"
+          Invoke-WebRequest -Uri $url -OutFile mysql.zip
+          Expand-Archive mysql.zip -DestinationPath mytmp -Force
+          $bin = (Get-ChildItem mytmp -Directory | Select-Object -First 1).FullName + "\bin"
+          New-Item -ItemType Directory -Force -Path tools/mysql | Out-Null
+          Copy-Item "$bin\mysqldump.exe","$bin\mysql.exe" tools/mysql/
+          # OpenSSL DLLs the clients link against live alongside the exes in bin/
+          Copy-Item "$bin\*.dll" tools/mysql/ -ErrorAction SilentlyContinue
+
+      - name: Stage MySQL client tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install mysql-client dylibbundler
+          MYBIN="$(brew --prefix mysql-client)/bin"
+          mkdir -p tools/mysql
+          cp "$MYBIN"/mysqldump "$MYBIN"/mysql tools/mysql/
+          chmod +w tools/mysql/*
+          for b in mysqldump mysql; do
+            dylibbundler -of -b -x ./tools/mysql/$b -d ./tools/mysql/ -p @loader_path/
+          done
+
+      - name: Stage MySQL client tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          # ubuntu 22.04 (jammy) ships mysql-client-core-8.0
+          sudo apt-get install -y mysql-client-core-8.0 patchelf
+          mkdir -p tools/mysql
+          cp "$(command -v mysqldump)" "$(command -v mysql)" tools/mysql/
+          chmod +w tools/mysql/*
+          # bundle the non-system shared libs the clients link against ($ORIGIN rpath
+          # makes them resolve next to the binaries), then point rpath at $ORIGIN.
+          for b in tools/mysql/mysqldump tools/mysql/mysql; do
+            ldd "$b" | awk '/=> \//{print $3}' | while read -r lib; do
+              case "$lib" in
+                *libc.so*|*ld-linux*|*libm.so*|*libdl.so*|*libpthread*|*librt.so*|*libgcc_s*) ;;
+                *libssl*|*libcrypto*|*libstdc++*|*libtinfo*|*libncurses*|*libz.so*|*libzstd*|*liblz4*|*libssl3*)
+                  cp -n "$lib" tools/mysql/ 2>/dev/null || true ;;
+              esac
+            done
+          done
+          for f in tools/mysql/*; do patchelf --set-rpath '$ORIGIN' "$f" 2>/dev/null || true; done
+
+      - name: Build Tauri bundle
+        run: bunx tauri build --bundles ${{ matrix.bundles }}
+
+      - name: Upload installers (artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: mysql-fast-ui-${{ matrix.rust_target }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: ignore
+
+      # On a tag push, attach this platform's installer to the GitHub Release.
+      # Each matrix job appends to the same release (keyed by the tag).
+      - name: Publish to Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: mysql-fast-ui ${{ github.ref_name }}
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: false
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/deb/*.deb

@@ -7,7 +7,12 @@
     "dev": "bun --watch server.js",
     "css": "./tools/tailwindcss -i src/input.css -o public/assets/tw.css --minify",
     "css:watch": "./tools/tailwindcss -i src/input.css -o public/assets/tw.css --watch",
-    "cm": "bun build vendor/cm/entry.js --outfile public/js/cm6.js --minify --target browser --format iife"
+    "cm": "bun build vendor/cm/entry.js --outfile public/js/cm6.js --minify --target browser --format iife",
+    "tauri": "tauri",
+    "build:sidecar": "bun build server.js --compile --minify --outfile src-tauri/binaries/mysql-fast-server",
+    "build:sidecar:win": "bun build server.js --compile --minify --target=bun-windows-x64 --outfile src-tauri/binaries/mysql-fast-server-x86_64-pc-windows-msvc",
+    "build:sidecar:mac": "bun build server.js --compile --minify --target=bun-darwin-arm64 --outfile src-tauri/binaries/mysql-fast-server-aarch64-apple-darwin",
+    "build:sidecar:linux": "bun build server.js --compile --minify --target=bun-linux-x64 --outfile src-tauri/binaries/mysql-fast-server-x86_64-unknown-linux-gnu"
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -17,6 +22,7 @@
     "@codemirror/lint": "^6.9.7",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.1",
-    "@lezer/highlight": "^1.2.3"
+    "@lezer/highlight": "^1.2.3",
+    "@tauri-apps/cli": "^2"
   }
 }
