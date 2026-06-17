@@ -3,22 +3,24 @@ import { getPool, quoteIdent } from "./db.js";
 
 export async function fetchSchema(db, connId = 0) {
   const sql = await getPool(db, connId);
+  // MySQL information_schema spans every database on the server, so scope each
+  // query to the selected db — otherwise the sidebar tree merges all databases.
   const tables = await sql.unsafe(`
     SELECT t.table_schema AS \`schema\`, t.table_name AS name,
            CASE t.table_type WHEN 'BASE TABLE' THEN 'table' WHEN 'VIEW' THEN 'view' ELSE t.table_type END AS kind,
            CAST(COALESCE(t.data_length + t.index_length, 0) AS UNSIGNED) AS bytes,
            t.table_rows AS est_rows
     FROM information_schema.TABLES t
-    WHERE t.table_schema NOT IN ('mysql','information_schema','performance_schema','sys')
-    ORDER BY t.table_schema, t.table_name`);
+    WHERE t.table_schema = ?
+    ORDER BY t.table_name`, [db]);
   const columns = await sql.unsafe(`
     SELECT c.table_schema AS \`schema\`, c.table_name AS \`table\`, c.column_name AS name,
            c.column_type AS type,
            c.is_nullable = 'YES' AS nullable, c.column_default AS dflt,
            c.extra AS extra, c.ordinal_position AS pos
     FROM information_schema.COLUMNS c
-    WHERE c.table_schema NOT IN ('mysql','information_schema','performance_schema','sys')
-    ORDER BY c.table_schema, c.table_name, c.ordinal_position`);
+    WHERE c.table_schema = ?
+    ORDER BY c.table_name, c.ordinal_position`, [db]);
   const pks = await sql.unsafe(`
     SELECT k.table_schema AS \`schema\`, k.table_name AS \`table\`,
            GROUP_CONCAT(k.column_name ORDER BY k.ordinal_position SEPARATOR ',') AS cols
@@ -28,8 +30,8 @@ export async function fetchSchema(db, connId = 0) {
      AND k.table_schema = tc.table_schema
      AND k.table_name = tc.table_name
     WHERE tc.constraint_type = 'PRIMARY KEY'
-      AND tc.table_schema NOT IN ('mysql','information_schema','performance_schema','sys')
-    GROUP BY k.table_schema, k.table_name`);
+      AND tc.table_schema = ?
+    GROUP BY k.table_schema, k.table_name`, [db]);
   // split comma-separated cols into arrays for join-builders
   for (const pk of pks) pk.cols = pk.cols ? pk.cols.split(",") : [];
   return { tables, columns, pks };
@@ -37,16 +39,8 @@ export async function fetchSchema(db, connId = 0) {
 
 export async function fetchFks(db, connId = 0) {
   const sql = await getPool(db, connId);
-  const rows = await sql.unsafe(`
-    SELECT k.table_schema AS src_schema, k.table_name AS src_table,
-           k.referenced_table_schema AS dst_schema, k.referenced_table_name AS dst_table,
-           k.constraint_name AS name
-    FROM information_schema.KEY_COLUMN_USAGE k
-    WHERE k.referenced_table_name IS NOT NULL
-      AND k.table_schema NOT IN ('mysql','information_schema','performance_schema','sys')
-    ORDER BY k.table_schema, k.table_name, k.constraint_name`);
-  // MySQL KEY_COLUMN_USAGE returns one row per column in the FK.
-  // Re-fetch grouped so we get arrays of src/dst columns.
+  // MySQL KEY_COLUMN_USAGE returns one row per column in the FK; group them into
+  // src/dst column arrays. Scope to the selected db (information_schema is server-wide).
   const grouped = await sql.unsafe(`
     SELECT k.table_schema AS src_schema, k.table_name AS src_table,
            k.referenced_table_schema AS dst_schema, k.referenced_table_name AS dst_table,
@@ -55,8 +49,8 @@ export async function fetchFks(db, connId = 0) {
            k.constraint_name AS name
     FROM information_schema.KEY_COLUMN_USAGE k
     WHERE k.referenced_table_name IS NOT NULL
-      AND k.table_schema NOT IN ('mysql','information_schema','performance_schema','sys')
-    GROUP BY k.table_schema, k.table_name, k.referenced_table_schema, k.referenced_table_name, k.constraint_name`);
+      AND k.table_schema = ?
+    GROUP BY k.table_schema, k.table_name, k.referenced_table_schema, k.referenced_table_name, k.constraint_name`, [db]);
   for (const f of grouped) {
     f.src_cols = f.src_cols ? f.src_cols.split(",") : [];
     f.dst_cols = f.dst_cols ? f.dst_cols.split(",") : [];
