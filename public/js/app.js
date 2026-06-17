@@ -82,7 +82,7 @@ async function loadDatabases() {
       <div class="dbrow group flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-paper-800 ${d.name === currentDb ? "bg-paper-700 ring-1 ring-rule-500" : ""}" data-db="${esc(d.name)}" role="treeitem" aria-expanded="false" aria-label="database ${esc(d.name)}" tabindex="-1">
         <span class="text-quill-400">${ic("database", 13)}</span>
         <span class="dbname font-medium text-[12.5px] flex-1 truncate">${esc(d.name)}</span>
-        <span class="font-mono text-[10px] text-ink-700">${fmtBytes(d.bytes)} · ${d.connections}c</span>
+        <span class="font-mono text-[10px] text-ink-700">${fmtBytes(d.bytes)}${d.charset ? " · " + esc(d.charset) : ""}</span>
         <button class="btn btn-sm btn-icon opacity-0 group-hover:opacity-100 transition-opacity" title="New table here (opens the builder)" data-newtable="${esc(d.name)}">${ic("wrench", 11)}</button>
         <button class="btn btn-sm btn-icon btn-danger opacity-0 group-hover:opacity-100 transition-opacity" title="Drop database" data-drop="${esc(d.name)}">${ic("trash", 11)}</button>
       </div>
@@ -350,38 +350,29 @@ async function loadTableDef(force) {
   const statsEl = document.getElementById("tbl-stats");
   ddlEl.textContent = "loading…"; idxEl.innerHTML = ""; statsEl.innerHTML = "";
   try {
-    const { ddl, indexes, stats = [] } = await api(`/api/tabledef?db=${encodeURIComponent(currentDb)}&schema=${encodeURIComponent(activeTable.schema)}&table=${encodeURIComponent(activeTable.name)}`);
+    const { ddl, indexes, stats = [], tableRows = 0 } = await api(`/api/tabledef?db=${encodeURIComponent(currentDb)}&schema=${encodeURIComponent(activeTable.schema)}&table=${encodeURIComponent(activeTable.name)}`);
     tableDefLoadedFor = key;
     ddlEl.innerHTML = hlSql(ddl);
-    const estRows = stats.length ? Math.max(0, Number(stats[0].est_rows)) : 0;
-    const fmtDistinct = nd => {
-      if (nd === null || nd === undefined) return '<span class="text-ink-700">—</span>';
-      const n = Number(nd);
-      if (n === -1) return '<span class="chip chip-green">unique</span>';
-      if (n < 0) return `~${Math.round(-n * estRows).toLocaleString()} <span class="text-ink-700">· ${(-n * 100).toFixed(0)}% of rows</span>`;
-      return "~" + n.toLocaleString();
-    };
+    const estRows = Math.max(0, Number(tableRows) || 0);
     statsEl.innerHTML = stats.length
-      ? `<table class="grid-table w-full"><thead><tr><th>column</th><th>type</th><th>constraint</th><th>null %</th><th>distinct · cardinality</th><th>avg width</th></tr></thead>
+      ? `<table class="grid-table w-full"><thead><tr><th>column</th><th>type</th><th>constraint</th><th>default</th><th>distinct (cardinality)</th></tr></thead>
         <tbody>${stats.map(c => `<tr>
           <td class="text-ink-100">${esc(c.name)}</td>
           <td>${esc(c.type)}</td>
-          <td>${c.nullable ? "" : '<span class="chip chip-amber">not null</span>'}</td>
-          <td>${c.null_frac == null ? '<span class="text-ink-700">—</span>' : (Number(c.null_frac) * 100).toFixed(1) + "%"}</td>
-          <td>${fmtDistinct(c.n_distinct)}</td>
-          <td>${c.avg_width == null ? '<span class="text-ink-700">—</span>' : c.avg_width + " B"}</td>
-        </tr>`).join("")}</tbody></table>` + (stats.every(c => c.n_distinct == null)
-          ? `<div class="mlabel mt-2">no statistics yet — run <span class="text-quill-400">ANALYZE ${esc(activeTable.name)}</span> in the console</div>`
-          : `<div class="mlabel mt-2">≈ ${estRows.toLocaleString()} rows (planner estimate)</div>`)
+          <td>${c.nullable ? "" : '<span class="chip chip-amber">not null</span>'}${/auto_increment/i.test(c.extra || "") ? ' <span class="chip chip-quill">auto</span>' : ""}</td>
+          <td class="font-mono text-[11px]">${c.dflt == null ? '<span class="text-ink-700">—</span>' : esc(String(c.dflt))}</td>
+          <td>${c.cardinality == null ? '<span class="text-ink-700">—</span>' : "~" + Number(c.cardinality).toLocaleString()}</td>
+        </tr>`).join("")}</tbody></table>`
+        + `<div class="mlabel mt-2">≈ ${estRows.toLocaleString()} rows (engine estimate · cardinality from indexed columns)</div>`
       : `<div class="mlabel py-2">—</div>`;
     idxEl.innerHTML = indexes.length
-      ? `<table class="grid-table w-full"><thead><tr><th>index</th><th>type</th><th>size</th><th>scans</th><th>definition</th></tr></thead>
+      ? `<table class="grid-table w-full"><thead><tr><th>index</th><th>type</th><th>columns</th><th>cardinality</th><th>definition</th></tr></thead>
         <tbody>${indexes.map(x => `<tr>
           <td class="text-ink-100">${esc(x.name)}</td>
-          <td>${x.is_primary ? '<span class="chip chip-amber">primary</span>' : x.is_unique ? '<span class="chip chip-quill">unique</span>' : '<span class="chip">btree</span>'}</td>
-          <td>${fmtBytes(x.bytes)}</td>
-          <td class="${Number(x.scans) === 0 ? "text-ink-700" : "text-green-led"}">${x.scans}</td>
-          <td class="!whitespace-normal !max-w-none font-mono text-[11px]">${esc(x.def)}</td>
+          <td>${x.is_primary ? '<span class="chip chip-amber">primary</span>' : x.is_unique ? '<span class="chip chip-quill">unique</span>' : '<span class="chip">' + esc(x.type || "index") + '</span>'}${x.visible === false ? ' <span class="chip">invisible</span>' : ""}</td>
+          <td class="font-mono text-[11px]">${esc(x.columns || "")}</td>
+          <td>${x.cardinality == null ? '<span class="text-ink-700">—</span>' : "~" + Number(x.cardinality).toLocaleString()}</td>
+          <td class="!whitespace-normal !max-w-none font-mono text-[11px]">${esc(x.def || "")}</td>
         </tr>`).join("")}</tbody></table>`
       : `<div class="mlabel py-2">no indexes</div>`;
   } catch (e) { ddlEl.textContent = e.message; }

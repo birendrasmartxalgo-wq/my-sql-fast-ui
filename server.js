@@ -298,19 +298,31 @@ async function handleApi(req, url, ip) {
         ORDER BY c.ordinal_position`, [schema, table]),
     ]);
     const ddl = createRows?.[0]?.["Create Table"] || "-- no DDL returned";
-    const idxList = indexes.map(r => ({
-      name: r.Key_name,
-      columns: r.Column_name,
-      unique: r.Non_unique === 0,
-      primary: r.Key_name === "PRIMARY",
-      cardinality: r.Cardinality || null,
-      visible: r.Visible !== "NO",
-    }));
+    // SHOW INDEX returns one row per column — collapse into one entry per index.
+    const idxMap = new Map();
+    for (const r of indexes) {
+      let e = idxMap.get(r.Key_name);
+      if (!e) {
+        e = { name: r.Key_name, is_primary: r.Key_name === "PRIMARY", is_unique: r.Non_unique === 0,
+              type: r.Index_type, cardinality: r.Cardinality || null, visible: r.Visible !== "NO", cols: [] };
+        idxMap.set(r.Key_name, e);
+      }
+      e.cols[(r.Seq_in_index || 1) - 1] = r.Sub_part ? `${r.Column_name}(${r.Sub_part})` : r.Column_name;
+      if ((r.Cardinality || 0) > (e.cardinality || 0)) e.cardinality = r.Cardinality;
+    }
+    const idxList = [...idxMap.values()].map(e => {
+      const cols = e.cols.filter(Boolean).join(", ");
+      return { name: e.name, is_primary: e.is_primary, is_unique: e.is_unique, type: e.type,
+               cardinality: e.cardinality, visible: e.visible, columns: cols,
+               def: `${e.is_unique ? "UNIQUE " : ""}(${cols}) ${e.type}` };
+    });
     const stats = colStats.map(r => ({
       name: r.name, type: r.type, nullable: r.nullable, dflt: r.dflt,
       extra: r.extra, cardinality: r.cardinality,
     }));
-    return json({ ddl, indexes: idxList, stats });
+    const trRows = await sql.unsafe(
+      `SELECT table_rows FROM information_schema.TABLES WHERE table_schema = ? AND table_name = ?`, [schema, table]);
+    return json({ ddl, indexes: idxList, stats, tableRows: Number(trRows?.[0]?.table_rows ?? 0) });
   }
 
   // ---- roles & grants (MySQL privilege system)
